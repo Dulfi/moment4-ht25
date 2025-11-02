@@ -1,6 +1,30 @@
 // Kör all JavaScript när DOM:en har laddats
 document.addEventListener("DOMContentLoaded", () => {
 
+  // Lägger till enkel CSS för field-error dynamiskt
+  const style = document.createElement("style");
+  style.textContent = `
+    .field-error {
+      color: red;
+      margin: 2px 0;
+      padding-left: 20px;
+      list-style-type: disc;
+      font-size: 0.9em;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Skapar en gemensam ruta för felmeddelanden ovanför formuläret
+  let errorBox = document.getElementById("errorlist");
+  if (!errorBox) {
+    errorBox = document.createElement("div");
+    errorBox.id = "errorlist";
+    errorBox.style.color = "red";
+    errorBox.style.marginBottom = "10px";
+    const newSection = document.getElementById("new");
+    if (newSection) newSection.prepend(errorBox);
+  }
+
   /*-------------------- Hämtar element från DOM --------------------*/
   const fullnameInput = document.getElementById("fullname");
   const emailInput    = document.getElementById("email");
@@ -12,14 +36,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const previewName   = document.getElementById("previewfullname");
   const previewEmail  = document.getElementById("previewemail");
   const previewPhone  = document.getElementById("previewphone");
-
-  // Felmeddelanderuta (om inte finns, skapa en)
-  let errorBox = document.getElementById("errors");
-  if (!errorBox) {
-    errorBox = document.createElement("div");
-    errorBox.id = "errors";
-    document.body.prepend(errorBox);
-  }
 
   // Historiksektion (skapas dynamiskt om den saknas)
   let historyContainer = document.getElementById("history");
@@ -36,6 +52,19 @@ document.addEventListener("DOMContentLoaded", () => {
   generateBtn.addEventListener("click", generateCard);
   clearBtn.addEventListener("click", clearForm);
 
+  /*-------------------- Fonten ändras dynamiskt --------------------*/
+  fontSelect.addEventListener("change", () => {
+    const font = fontSelect.value;
+    [previewName, previewEmail, previewPhone].forEach(el => {
+      if (el) el.style.fontFamily = font;
+    });
+  });
+
+  /*-------------------- Hjälpfunktion: Visa fel ovanför fält --------------------*/
+  function showFieldError(inputElement, message) {
+    // används ej i denna version, men sparad för referens
+  }
+
   /*-------------------- Skapar studentkort --------------------*/
   function generateCard(event) {
     event.preventDefault();
@@ -51,34 +80,40 @@ document.addEventListener("DOMContentLoaded", () => {
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const phonePattern = /^[0-9+\s-]{6,20}$/;
 
-    // Nollställar röda kanter
-    [fullnameInput, emailInput, phoneInput].forEach(el => el.style.border = "");
+    // Rensar tidigare felmeddelanden
+    errorBox.innerHTML = "";
 
     // Namnvalidering
     if (!fullname) {
-      errors.push("Fyll i ditt namn.");
+      errors.push("Namn måste anges");
       fullnameInput.style.border = "2px solid red";
     } else if (!namePattern.test(fullname)) {
-      errors.push("Fel format för namn – använd bara bokstäver.");
+      errors.push("Fel format för namn");
       fullnameInput.style.border = "2px solid red";
+    } else {
+      fullnameInput.style.border = "";
     }
 
     // E-postvalidering
     if (!email) {
-      errors.push("Fyll i din e-postadress.");
+      errors.push("E-post måste anges");
       emailInput.style.border = "2px solid red";
     } else if (!emailPattern.test(email)) {
-      errors.push("Fel format för e-postadress.");
+      errors.push("Fel format för e-postadress");
       emailInput.style.border = "2px solid red";
+    } else {
+      emailInput.style.border = "";
     }
 
     // Telefonnummer-validering
     if (!phone) {
-      errors.push("Fyll i ditt telefonnummer.");
+      errors.push("Telefonnummer måste anges");
       phoneInput.style.border = "2px solid red";
     } else if (!phonePattern.test(phone)) {
-      errors.push("Fel format för telefonnummer – skriv bara siffror och tillåtna tecken (+, -, mellanslag).");
+      errors.push("Fel format för telefonnummer");
       phoneInput.style.border = "2px solid red";
+    } else {
+      phoneInput.style.border = "";
     }
 
     // Om fel hittades, visa dem och avbryt
@@ -89,10 +124,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Inga fel, återställ, spara och visa kortet
-    renderErrors([]);
-    [fullnameInput, emailInput, phoneInput].forEach(el => el.style.border = "");
-
-    saveToHistory(fullname, email, phone); // Sparar kortetsinfo till historiken
+    renderErrors([]); // töm felrutan när allt är okej
+    saveToHistory(fullname, email, phone, font); // sparar data till historiken (font ignoreras vid jämförelse)
     renderPreview(fullname, email, phone, font);
   }
 
@@ -114,15 +147,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /*-------------------- Visar felmeddelanden --------------------*/
   function renderErrors(errors) {
-    errorBox.innerHTML = "";
+    errorBox.innerHTML = ""; // Rensa tidigare fel
     if (errors.length === 0) return;
 
     const ul = document.createElement("ul");
+    ul.style.listStyleType = "disc";
+    ul.style.paddingLeft = "20px";
+    ul.style.margin = "0";
+
     errors.forEach(message => {
       const li = document.createElement("li");
       li.textContent = message;
       ul.appendChild(li);
     });
+
     errorBox.appendChild(ul);
   }
 
@@ -149,27 +187,29 @@ document.addEventListener("DOMContentLoaded", () => {
   // Visar historik direkt vid start
   displayHistory();
 
-  // Sparar giltig inmatning i localStorage och kollar om namnet redan finns registrerat.
-  function saveToHistory(fullname, email, phone) {
+  // Sparar giltig inmatning i localStorage och lägger till historik för varje förändring (utom font)
+  function saveToHistory(fullname, email, phone, font) {
     let history = JSON.parse(localStorage.getItem("history")) || [];
 
-    // Kontrollerar om namnet redan finns (case-insensitive)
-    const nameExists = history.some(entry =>
-      entry.fullname.trim().toLowerCase() === fullname.trim().toLowerCase()
-    );
+    // Skapa signatur för aktuell data (exkluderar font)
+    const currentSignature = `${fullname.trim().toLowerCase()}|${email.trim().toLowerCase()}|${phone.trim()}`;
 
-    if (nameExists) {
-      fullnameInput.style.border = "2px solid red";
-      renderErrors(["Namn redan registrerat."]);
-      return; // Avbryt sparningen
+    // Hämta senaste posten i historiken (exkluderar font)
+    const lastEntry = history.length > 0 ? history[history.length - 1] : null;
+    const lastSignature = lastEntry
+      ? `${lastEntry.fullname.trim().toLowerCase()}|${lastEntry.email.trim().toLowerCase()}|${lastEntry.phone.trim()}`
+      : "";
+
+    // Om inget ändrats (förutom font) → gör ingenting
+    if (currentSignature === lastSignature) {
+      renderErrors([]); // ingen felruta
+      fullnameInput.style.border = "";
+      return;
     }
 
-    fullnameInput.style.border = "";
-
-    // Lägg till ny post och spara
+    // Annars, lägg till ny post i historiken (lagrar inte font i historiken)
     history.push({ fullname, email, phone });
     localStorage.setItem("history", JSON.stringify(history));
-
     displayHistory();
   }
 
